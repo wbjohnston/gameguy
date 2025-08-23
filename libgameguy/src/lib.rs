@@ -3,11 +3,23 @@ use std::fmt::UpperHex;
 #[derive(Debug, Default, Clone)]
 pub struct Emulator {
     cpu: Cpu,
+    memory: Memory,
 }
 
 impl Emulator {
+    pub fn from_rom_00(rom_00: [u8; ROM_00_SIZE]) -> Self {
+        Emulator {
+            cpu: Cpu::default(),
+            memory: Memory::with_rom_00(rom_00),
+        }
+    }
+
     pub fn cpu(&self) -> &Cpu {
         &self.cpu
+    }
+
+    pub fn memory(&self) -> &Memory {
+        &self.memory
     }
 }
 
@@ -110,6 +122,51 @@ impl UpperHex for Register {
 impl From<u16> for Register {
     fn from(value: u16) -> Self {
         Register { inner: value }
+    }
+}
+
+pub const ROM_00_ADDRESS_START: u16 = 0x0000;
+pub const ROM_00_SIZE: usize = ROM_NN_ADDRESS_START as usize - ROM_00_ADDRESS_START as usize;
+pub const ROM_NN_ADDRESS_START: u16 = 0x4000;
+
+pub const WRAM_00_ADDRESS_START: u16 = 0xC000;
+pub const WRAM_00_SIZE: usize = WRAM_NN_ADDRESS_START as usize - WRAM_00_ADDRESS_START as usize;
+
+pub const WRAM_NN_ADDRESS_START: u16 = 0xD000;
+
+#[derive(Debug, Clone)]
+pub struct Memory {
+    rom_00: [u8; ROM_00_SIZE],
+    wram: [u8; WRAM_00_SIZE],
+}
+
+impl Default for Memory {
+    fn default() -> Self {
+        Memory {
+            rom_00: [0; ROM_00_SIZE],
+            wram: [0; WRAM_00_SIZE],
+        }
+    }
+}
+
+impl Memory {
+    pub fn get(&self, address: u16) -> u8 {
+        match address {
+            ROM_00_ADDRESS_START..ROM_NN_ADDRESS_START => {
+                self.rom_00[(address - ROM_00_ADDRESS_START) as usize]
+            }
+            WRAM_00_ADDRESS_START..WRAM_NN_ADDRESS_START => {
+                self.wram[(address - WRAM_00_ADDRESS_START) as usize]
+            }
+            _ => panic!("Invalid address"),
+        }
+    }
+
+    pub fn with_rom_00(rom_00: [u8; ROM_00_SIZE]) -> Self {
+        Memory {
+            rom_00,
+            wram: [0; WRAM_00_SIZE],
+        }
     }
 }
 

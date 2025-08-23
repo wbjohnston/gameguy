@@ -1,11 +1,11 @@
 use std::io;
 
-use libgameguy::Emulator;
+use libgameguy::{Emulator, ROM_00_SIZE};
 
 use clap::Parser;
+use ratatui::crossterm::event;
 use ratatui::crossterm::event::{Event, KeyEvent, KeyModifiers};
 use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use ratatui::crossterm::{self, event};
 use ratatui::Terminal;
 use ratatui::{
     crossterm::{event::KeyCode, execute, terminal},
@@ -21,11 +21,11 @@ struct App {
 }
 
 impl App {
-    fn new() -> App {
+    fn new(emulator: Emulator) -> App {
         App {
             command_buffer: String::new(),
             command_history: Vec::new(),
-            emulator: Emulator::default(),
+            emulator,
         }
     }
 
@@ -122,7 +122,14 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut app = App::new();
+    let args = Args::parse();
+
+    let rom = std::fs::read(&args.rom_path)?;
+    let rom_00 = rom[0..ROM_00_SIZE].try_into().unwrap();
+
+    let emulator = Emulator::from_rom_00(rom_00);
+
+    let mut app = App::new(emulator);
     app.run()?;
 
     Ok(())
