@@ -3,4 +3,15 @@ name = "gameguy"
 version = "0.1.0"
 edition = "2021"
 
+
+[workspace]
+members = ["libgameguy"]
+resolver = "2"           # recommended for modern features resolution
+
+
 [dependencies]
+libgameguy = { path = "./libgameguy" }
+
+[[bin]]
+name = "gbdb"
+path = "src/bin/gbdb.rs"
