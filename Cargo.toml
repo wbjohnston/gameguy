@@ -12,6 +12,7 @@ resolver = "2"           # recommended for modern features resolution
 [dependencies]
 clap = { version = "4.5.45", features = ["derive"] }
 libgameguy = { path = "./libgameguy" }
+ratatui = "0.29.0"
 
 [[bin]]
 name = "gbdb"
