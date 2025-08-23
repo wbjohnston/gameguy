@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::path::Path;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
