@@ -1,24 +1,23 @@
 use std::io;
 
+use libgameguy::Emulator;
+
 use clap::Parser;
 use ratatui::crossterm::event::{Event, KeyEvent, KeyModifiers};
 use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::crossterm::{self, event};
+use ratatui::Terminal;
 use ratatui::{
     crossterm::{event::KeyCode, execute, terminal},
     layout::{Constraint, Direction, Layout},
     prelude::CrosstermBackend,
-    text::Text,
     widgets::{Block, Borders, Paragraph},
-    Frame, Terminal,
 };
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
 struct App {
     command_buffer: String,
     command_history: Vec<String>,
-    registers: Vec<String>,
+    emulator: Emulator,
 }
 
 impl App {
@@ -26,15 +25,7 @@ impl App {
         App {
             command_buffer: String::new(),
             command_history: Vec::new(),
-            registers: vec![
-                "A: 01".into(),
-                "B: 00".into(),
-                "C: 13".into(),
-                "D: 00".into(),
-                "E: 37".into(),
-                "H: 00".into(),
-                "L: ED".into(),
-            ],
+            emulator: Emulator::default(),
         }
     }
 
@@ -48,8 +39,18 @@ impl App {
             ])
             .split(size);
 
-        let registers_paragraph = Paragraph::new(self.registers.join("\n"))
-            .block(Block::default().title("Registers").borders(Borders::ALL));
+        let registers_paragraph = Paragraph::new(
+            [
+                format!("AF: {:04X}", self.emulator.cpu().af()),
+                format!("BC: {:04X}", self.emulator.cpu().bc()),
+                format!("DE: {:04X}", self.emulator.cpu().de()),
+                format!("HL: {:04X}", self.emulator.cpu().hl()),
+                format!("SP: {:04X}", self.emulator.cpu().sp()),
+                format!("PC: {:04X}", self.emulator.cpu().pc()),
+            ]
+            .join("\n"),
+        )
+        .block(Block::default().title("Registers").borders(Borders::ALL));
         f.render_widget(registers_paragraph, chunks[0]);
 
         // Build command history display

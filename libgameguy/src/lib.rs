@@ -1,16 +1,61 @@
-pub struct Emulator {}
+use std::fmt::UpperHex;
 
+#[derive(Debug, Default, Clone)]
+pub struct Emulator {
+    cpu: Cpu,
+}
+
+impl Emulator {
+    pub fn cpu(&self) -> &Cpu {
+        &self.cpu
+    }
+}
+
+#[derive(Debug, Default, Clone)]
 pub struct Cpu {
     pub af: FlagRegister,
     pub bc: Register,
     pub de: Register,
+    pub hl: Register,
     pub sp: u16,
     pub pc: u16,
 }
 
-#[derive(Debug, Default)]
+impl Cpu {
+    pub fn af(&self) -> FlagRegister {
+        self.af
+    }
+
+    pub fn bc(&self) -> Register {
+        self.bc
+    }
+
+    pub fn de(&self) -> Register {
+        self.de
+    }
+
+    pub fn hl(&self) -> Register {
+        self.hl
+    }
+
+    pub fn sp(&self) -> u16 {
+        self.sp
+    }
+
+    pub fn pc(&self) -> u16 {
+        self.pc
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
 pub struct FlagRegister {
     inner: u16,
+}
+
+impl UpperHex for FlagRegister {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:04X}", self.inner)
+    }
 }
 
 impl From<u16> for FlagRegister {
@@ -53,6 +98,12 @@ impl Register {
 
     pub fn lo(self) -> u8 {
         (self.inner & 0x00FF) as u8
+    }
+}
+
+impl UpperHex for Register {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:04X}", self.inner)
     }
 }
 
