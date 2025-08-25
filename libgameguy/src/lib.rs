@@ -51,7 +51,7 @@ impl Default for Cpu {
 }
 
 impl Cpu {
-    pub fn step<M>(&mut self, memory: &mut M)
+    pub fn step<M>(&mut self, mut memory: &mut M)
     where
         M: std::ops::Index<u16, Output = u8> + std::ops::IndexMut<u16, Output = u8>,
     {
@@ -74,6 +74,13 @@ impl Cpu {
         match opcode {
             Opcode::Noop => {}
 
+            Opcode::LdCU8 => {
+                let operand = memory[self.pc];
+                self.pc += 1;
+
+                *self.bc().lo_mut() = operand;
+            }
+
             Opcode::LdHldA => {
                 let hl = self.hl.combined();
                 memory[hl] = self.af.hi();
@@ -95,9 +102,14 @@ impl Cpu {
                 }
             }
 
+            Opcode::LdRHlA => {
+                let ptr = self.hl.combined();
+                memory[ptr] = self.af.hi();
+            }
+
             Opcode::JrNzE8 => {
                 let offset = memory[self.pc] as i8;
-                println!("{}", offset);
+                self.pc += 1;
 
                 if !self.af.get_flag(Flag::Zero) {
                     self.pc = if offset >= 0 {
@@ -111,6 +123,16 @@ impl Cpu {
             Opcode::LdhCA => {
                 let ptr = 0x00FF + self.bc.lo() as u16;
                 memory[ptr] = self.af.hi();
+            }
+            Opcode::IncC => {
+                let x = self.bc.lo_mut();
+                let (new_x, overflowed) = x.overflowing_add(1);
+                *x = new_x;
+                if overflowed {
+                    self.af.set_flag(Flag::Zero, true);
+                    self.af.set_flag(Flag::HalfCarry, true);
+                }
+                self.af.set_flag(Flag::Subtraction, false);
             }
 
             Opcode::LdAU8 => {
@@ -353,6 +375,9 @@ pub const WRAM_00_SIZE: usize = WRAM_NN_ADDRESS_START as usize - WRAM_00_ADDRESS
 
 pub const WRAM_NN_ADDRESS_START: u16 = 0xD000;
 
+pub const IO_ADDRESS_START: u16 = 0xFF00;
+pub const IO_SIZE: usize = HRAM_ADDRESS_START as usize - IO_ADDRESS_START as usize;
+
 pub const HRAM_ADDRESS_START: u16 = 0xFF80;
 pub const HRAM_SIZE: usize = IE_ADDRESS_START as usize - HRAM_ADDRESS_START as usize;
 pub const IE_ADDRESS_START: u16 = 0xFFFF;
@@ -363,6 +388,7 @@ pub struct Memory {
     rom_nn: [u8; ROM_NN_SIZE],
     vram: [u8; VRAM_SIZE],
     wram: [u8; WRAM_00_SIZE],
+    io: [u8; IO_SIZE],
     hram: [u8; HRAM_SIZE],
     ie: u8,
 }
@@ -387,6 +413,7 @@ impl Default for Memory {
             rom_nn: [0; ROM_NN_SIZE],
             vram: [0; VRAM_SIZE],
             wram: [0; WRAM_00_SIZE],
+            io: [0; IO_SIZE],
             hram: [0; HRAM_SIZE],
             ie: 0,
         }
@@ -414,6 +441,9 @@ impl Memory {
             }
             WRAM_00_ADDRESS_START..WRAM_NN_ADDRESS_START => {
                 self.wram[(address - WRAM_00_ADDRESS_START) as usize] = value;
+            }
+            IO_ADDRESS_START..HRAM_ADDRESS_START => {
+                self.wram[(address - IO_ADDRESS_START) as usize] = value;
             }
             HRAM_ADDRESS_START..IE_ADDRESS_START => {
                 self.hram[(address - HRAM_ADDRESS_START) as usize] = value;
@@ -443,6 +473,9 @@ impl Memory {
             WRAM_00_ADDRESS_START..WRAM_NN_ADDRESS_START => {
                 &self.wram[(address - WRAM_00_ADDRESS_START) as usize]
             }
+            IO_ADDRESS_START..HRAM_ADDRESS_START => {
+                &self.wram[(address - IO_ADDRESS_START) as usize]
+            }
             HRAM_ADDRESS_START..IE_ADDRESS_START => {
                 &self.hram[(address - HRAM_ADDRESS_START) as usize]
             }
@@ -464,6 +497,9 @@ impl Memory {
             }
             WRAM_00_ADDRESS_START..WRAM_NN_ADDRESS_START => {
                 &mut self.wram[(address - WRAM_00_ADDRESS_START) as usize]
+            }
+            IO_ADDRESS_START..HRAM_ADDRESS_START => {
+                &mut self.wram[(address - IO_ADDRESS_START) as usize]
             }
             HRAM_ADDRESS_START..IE_ADDRESS_START => {
                 &mut self.wram[(address - HRAM_ADDRESS_START) as usize]
@@ -490,6 +526,8 @@ pub fn pack_u8s(hi: u8, lo: u8) -> u16 {
 #[derive(Debug, Clone, Copy)]
 pub enum Opcode {
     Noop = 0x00,
+    IncC = 0x0C,
+    LdCU8 = 0x0E,
     LdSpU16 = 0x31,
     IncA = 0x3c,
     LdBA = 0x47,
@@ -509,6 +547,7 @@ pub enum Opcode {
     LdhCA = 0xE2,
     LdHldA = 0x32,
     Prefix = 0xCB,
+    LdRHlA = 0x77,
 }
 
 pub enum PrefixeOpcode {
@@ -534,6 +573,9 @@ impl fmt::Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Opcode::LdAU8 => "LD A,u8",
+            Opcode::LdRHlA => "LD [HL], A",
+            Opcode::IncC => "INC C",
+            Opcode::LdCU8 => "LD C,u8",
             Opcode::XorAA => "XOR A,A",
             Opcode::DecB => "DEC B",
             Opcode::JrNzE8 => "JR NZ, e8",
@@ -562,6 +604,8 @@ impl From<u8> for Opcode {
     fn from(value: u8) -> Self {
         match value {
             0x00 => Opcode::Noop,
+            0x77 => Opcode::LdRHlA,
+            0x0C => Opcode::IncC,
             0x05 => Opcode::DecB,
             0x20 => Opcode::JrNzE8,
             0x31 => Opcode::LdSpU16,
@@ -581,6 +625,7 @@ impl From<u8> for Opcode {
             0x3E => Opcode::LdAU8,
             0xE2 => Opcode::LdhCA,
             0xCB => Opcode::Prefix,
+            0x0E => Opcode::LdCU8,
             x => unimplemented!("{:02X}", x),
         }
     }

@@ -165,6 +165,9 @@ impl App {
                             Some("") => {
                                 self.emulator.step();
                             }
+                            Some("c") => loop {
+                                self.emulator.step();
+                            },
                             Some("m") | Some("mem") => {
                                 let addr_str = parts.next().unwrap_or("");
                                 let addr = if let Some(hex) = addr_str.strip_prefix("0x") {
@@ -178,7 +181,14 @@ impl App {
                                 self.command_history.push(format!("> 0x{:02X}", x));
                             }
                             Some("s") | Some("step") => {
-                                self.emulator.step();
+                                let mut n_steps = 1;
+                                if let Some(n) = parts.next().and_then(|x| x.parse().ok()) {
+                                    n_steps = n;
+                                }
+
+                                for _ in 0..n_steps {
+                                    self.emulator.step();
+                                }
                             }
                             _ => {}
                         }
