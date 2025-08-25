@@ -235,6 +235,13 @@ impl Cpu {
             Opcode::LdBA => {
                 *self.bc.hi_mut() = self.af.hi();
             }
+            Opcode::LdhRU8A => {
+                let operand = memory[self.pc];
+                self.pc += 1;
+
+                let ptr = 0xFF00 + operand as u16;
+                memory[ptr] = self.af.hi();
+            }
             Opcode::Rst38 => {
                 self.sp -= 2;
                 set_u16(memory, self.sp, self.pc);
@@ -443,7 +450,7 @@ impl Memory {
                 self.wram[(address - WRAM_00_ADDRESS_START) as usize] = value;
             }
             IO_ADDRESS_START..HRAM_ADDRESS_START => {
-                self.wram[(address - IO_ADDRESS_START) as usize] = value;
+                self.io[(address - IO_ADDRESS_START) as usize] = value;
             }
             HRAM_ADDRESS_START..IE_ADDRESS_START => {
                 self.hram[(address - HRAM_ADDRESS_START) as usize] = value;
@@ -473,9 +480,7 @@ impl Memory {
             WRAM_00_ADDRESS_START..WRAM_NN_ADDRESS_START => {
                 &self.wram[(address - WRAM_00_ADDRESS_START) as usize]
             }
-            IO_ADDRESS_START..HRAM_ADDRESS_START => {
-                &self.wram[(address - IO_ADDRESS_START) as usize]
-            }
+            IO_ADDRESS_START..HRAM_ADDRESS_START => &self.io[(address - IO_ADDRESS_START) as usize],
             HRAM_ADDRESS_START..IE_ADDRESS_START => {
                 &self.hram[(address - HRAM_ADDRESS_START) as usize]
             }
@@ -499,7 +504,7 @@ impl Memory {
                 &mut self.wram[(address - WRAM_00_ADDRESS_START) as usize]
             }
             IO_ADDRESS_START..HRAM_ADDRESS_START => {
-                &mut self.wram[(address - IO_ADDRESS_START) as usize]
+                &mut self.io[(address - IO_ADDRESS_START) as usize]
             }
             HRAM_ADDRESS_START..IE_ADDRESS_START => {
                 &mut self.wram[(address - HRAM_ADDRESS_START) as usize]
@@ -526,6 +531,7 @@ pub fn pack_u8s(hi: u8, lo: u8) -> u16 {
 #[derive(Debug, Clone, Copy)]
 pub enum Opcode {
     Noop = 0x00,
+    LdhRU8A = 0xE0,
     IncC = 0x0C,
     LdCU8 = 0x0E,
     LdSpU16 = 0x31,
@@ -573,6 +579,7 @@ impl fmt::Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Opcode::LdAU8 => "LD A,u8",
+            Opcode::LdhRU8A => "LDH [u8], A",
             Opcode::LdRHlA => "LD [HL], A",
             Opcode::IncC => "INC C",
             Opcode::LdCU8 => "LD C,u8",
@@ -615,6 +622,7 @@ impl From<u8> for Opcode {
             0xC9 => Opcode::Ret,
             0x08 => Opcode::LdU16Sp,
             0x11 => Opcode::LdDeU16,
+            0xE0 => Opcode::LdhRU8A,
             0x21 => Opcode::LdHlU16,
             0x40 => Opcode::LdBB,
             0xC0 => Opcode::RetNz,
