@@ -74,6 +74,11 @@ impl Cpu {
         match opcode {
             Opcode::Noop => {}
 
+            Opcode::IncDe => {
+                let mut x = self.de.u16_mut();
+                *x = x.wrapping_add(1);
+            }
+
             Opcode::LdCU8 => {
                 let operand = memory[self.pc];
                 self.pc += 1;
@@ -595,6 +600,7 @@ pub enum Opcode {
     LdhCA = 0xE2,
     LdHldA = 0x32,
     Prefix = 0xCB,
+    IncDe = 0x13,
     LdRHlA = 0x77,
 }
 
@@ -620,6 +626,7 @@ use std::ops::{Index, IndexMut};
 impl fmt::Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Opcode::IncDe => "INC DE",
             Opcode::LdAU8 => "LD A,u8",
             Opcode::LdARDe => "LD A,[DE]",
             Opcode::PushHl => "PUSH HL",
@@ -655,6 +662,7 @@ impl From<u8> for Opcode {
     fn from(value: u8) -> Self {
         match value {
             0x00 => Opcode::Noop,
+            0x13 => Opcode::IncDe,
             0x77 => Opcode::LdRHlA,
             0x0C => Opcode::IncC,
             0x05 => Opcode::DecB,
