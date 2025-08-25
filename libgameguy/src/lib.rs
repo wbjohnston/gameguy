@@ -242,6 +242,10 @@ impl Cpu {
                 let ptr = 0xFF00 + operand as u16;
                 memory[ptr] = self.af.hi();
             }
+            Opcode::PushHl => {
+                self.sp -= 2;
+                set_u16(&mut memory, self.sp, self.hl.combined());
+            }
             Opcode::Rst38 => {
                 self.sp -= 2;
                 set_u16(memory, self.sp, self.pc);
@@ -531,6 +535,7 @@ pub fn pack_u8s(hi: u8, lo: u8) -> u16 {
 #[derive(Debug, Clone, Copy)]
 pub enum Opcode {
     Noop = 0x00,
+    PushHl = 0xE5,
     LdhRU8A = 0xE0,
     IncC = 0x0C,
     LdCU8 = 0x0E,
@@ -579,6 +584,7 @@ impl fmt::Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Opcode::LdAU8 => "LD A,u8",
+            Opcode::PushHl => "PUSH HL",
             Opcode::LdhRU8A => "LDH [u8], A",
             Opcode::LdRHlA => "LD [HL], A",
             Opcode::IncC => "INC C",
@@ -634,6 +640,7 @@ impl From<u8> for Opcode {
             0xE2 => Opcode::LdhCA,
             0xCB => Opcode::Prefix,
             0x0E => Opcode::LdCU8,
+            0xE5 => Opcode::PushHl,
             x => unimplemented!("{:02X}", x),
         }
     }

@@ -115,11 +115,13 @@ impl App {
 
         // Build command history display
         let mut command_display = vec![format!("(gbdb) {}", self.command_buffer)];
-        for command in self.command_history.iter() {
-            command_display.push(format!("(gbdb) {}", command));
+        for command in self.command_history.iter().rev() {
+            command_display.push(format!("{}", command));
         }
 
         command_display.reverse();
+
+        // command_display.reverse();
         let command_history_paragraph = Paragraph::new(command_display.join("\n")).block(
             Block::default()
                 .title("Command History")
