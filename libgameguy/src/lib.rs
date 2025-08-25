@@ -74,6 +74,29 @@ impl Cpu {
         match opcode {
             Opcode::Noop => {}
 
+            Opcode::LdEU8 => {
+                let operand = memory[self.pc];
+                self.pc += 1;
+                *self.de.lo_mut() = operand;
+            }
+
+            Opcode::CallU16 => {
+                let operand = get_u16(memory, self.pc);
+                self.pc += 2;
+                self.sp -= 2;
+                set_u16(&mut memory, self.sp, self.pc);
+                self.pc = operand;
+            }
+
+            Opcode::CpARHl => {
+                let (tmp, overflowed) = self.af.hi().overflowing_sub(memory[self.hl.u16()]);
+
+                self.af.set_flag(Flag::Zero, tmp == 0);
+                self.af.set_flag(Flag::Subtraction, true);
+                self.af.set_flag(Flag::Carry, overflowed);
+                // TODO: half carry
+            }
+
             Opcode::IncDe => {
                 let mut x = self.de.u16_mut();
                 *x = x.wrapping_add(1);
@@ -552,7 +575,7 @@ impl Memory {
                 &mut self.io[(address - IO_ADDRESS_START) as usize]
             }
             HRAM_ADDRESS_START..IE_ADDRESS_START => {
-                &mut self.wram[(address - HRAM_ADDRESS_START) as usize]
+                &mut self.hram[(address - HRAM_ADDRESS_START) as usize]
             }
             IE_ADDRESS_START => &mut self.ie,
             a => panic!("Invalid address {:04X}", a),
@@ -576,6 +599,8 @@ pub fn pack_u8s(hi: u8, lo: u8) -> u16 {
 #[derive(Debug, Clone, Copy)]
 pub enum Opcode {
     Noop = 0x00,
+    CallU16 = 0xCD,
+    LdEU8 = 0x1E,
     PushHl = 0xE5,
     LdhRU8A = 0xE0,
     IncC = 0x0C,
@@ -598,6 +623,7 @@ pub enum Opcode {
     XorAA = 0xAF,
     LdAU8 = 0x3E,
     LdhCA = 0xE2,
+    CpARHl = 0xBE,
     LdHldA = 0x32,
     Prefix = 0xCB,
     IncDe = 0x13,
@@ -627,8 +653,11 @@ impl fmt::Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Opcode::IncDe => "INC DE",
+            Opcode::CallU16 => "CALL u16",
+            Opcode::LdEU8 => "LD E,u8",
             Opcode::LdAU8 => "LD A,u8",
             Opcode::LdARDe => "LD A,[DE]",
+            Opcode::CpARHl => "CP A,[HL]",
             Opcode::PushHl => "PUSH HL",
             Opcode::LdhRU8A => "LDH [u8], A",
             Opcode::LdRHlA => "LD [HL], A",
@@ -688,6 +717,9 @@ impl From<u8> for Opcode {
             0xCB => Opcode::Prefix,
             0x0E => Opcode::LdCU8,
             0xE5 => Opcode::PushHl,
+            0xBE => Opcode::CpARHl,
+            0xCD => Opcode::CallU16,
+            0x1E => Opcode::LdEU8,
             x => unimplemented!("{:02X}", x),
         }
     }
