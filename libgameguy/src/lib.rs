@@ -251,7 +251,10 @@ impl Cpu {
                 set_u16(memory, self.sp, self.pc);
                 self.pc = 0x0038;
             }
-            o => unimplemented!("{:?}", o),
+            Opcode::LdARDe => {
+                let ptr = self.de.combined();
+                memory[ptr] = self.af.hi();
+            }
         }
     }
 
@@ -549,6 +552,7 @@ pub enum Opcode {
     LdHlU16 = 0x21,
     LdBB = 0x40,
     RetNz = 0xC0,
+    LdARDe = 0x1A,
     CpAI8 = 0xFE,
     Rst38 = 0xFF,
     DecB = 0x05,
@@ -584,6 +588,7 @@ impl fmt::Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Opcode::LdAU8 => "LD A,u8",
+            Opcode::LdARDe => "LD A,[DE]",
             Opcode::PushHl => "PUSH HL",
             Opcode::LdhRU8A => "LDH [u8], A",
             Opcode::LdRHlA => "LD [HL], A",
@@ -621,6 +626,7 @@ impl From<u8> for Opcode {
             0x0C => Opcode::IncC,
             0x05 => Opcode::DecB,
             0x20 => Opcode::JrNzE8,
+            0x1A => Opcode::LdARDe,
             0x31 => Opcode::LdSpU16,
             0x47 => Opcode::LdBA,
             0x3C => Opcode::IncA,
