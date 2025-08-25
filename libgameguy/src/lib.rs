@@ -82,9 +82,9 @@ impl Cpu {
             }
 
             Opcode::LdHldA => {
-                let hl = self.hl.combined();
+                let hl = self.hl.u16();
                 memory[hl] = self.af.hi();
-                self.hl.set_u16(hl - 1);
+                *self.hl.u16_mut() -= 1;
             }
 
             Opcode::Prefix => {
@@ -103,7 +103,7 @@ impl Cpu {
             }
 
             Opcode::LdRHlA => {
-                let ptr = self.hl.combined();
+                let ptr = self.hl.u16();
                 memory[ptr] = self.af.hi();
             }
 
@@ -191,7 +191,7 @@ impl Cpu {
             Opcode::LdDeU16 => {
                 let value = get_u16(memory, self.pc);
                 self.pc += 2;
-                self.de.set_u16(value);
+                *self.de.u16_mut() = value;
             }
             Opcode::CpAI8 => {
                 let a = self.af.hi_mut();
@@ -224,7 +224,8 @@ impl Cpu {
             Opcode::LdHlU16 => {
                 let value = get_u16(memory, self.pc);
                 self.pc += 2;
-                self.hl.set_u16(value);
+                // self.hl.set_u16(value);
+                *self.hl.u16_mut() = value;
             }
             Opcode::LdBB => {
                 *self.bc.hi_mut() = self.bc.hi();
@@ -244,7 +245,7 @@ impl Cpu {
             }
             Opcode::PushHl => {
                 self.sp -= 2;
-                set_u16(&mut memory, self.sp, self.hl.combined());
+                set_u16(&mut memory, self.sp, self.hl.u16());
             }
             Opcode::Rst38 => {
                 self.sp -= 2;
@@ -252,7 +253,7 @@ impl Cpu {
                 self.pc = 0x0038;
             }
             Opcode::LdARDe => {
-                let ptr = self.de.combined();
+                let ptr = self.de.u16();
                 memory[ptr] = self.af.hi();
             }
         }
@@ -362,8 +363,40 @@ impl Register {
         self.lo = low;
     }
 
-    pub fn combined(self) -> u16 {
+    pub fn u16(self) -> u16 {
         ((self.hi as u16) << 8) | (self.lo as u16)
+    }
+
+    pub fn u16_mut(&mut self) -> U16Ref<'_> {
+        let val = self.u16();
+        U16Ref {
+            register: self,
+            cached_value: val,
+        }
+    }
+}
+
+pub struct U16Ref<'a> {
+    register: &'a mut Register,
+    cached_value: u16,
+}
+
+impl<'a> std::ops::Deref for U16Ref<'a> {
+    type Target = u16;
+    fn deref(&self) -> &Self::Target {
+        &self.cached_value
+    }
+}
+
+impl<'a> std::ops::DerefMut for U16Ref<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.cached_value
+    }
+}
+
+impl<'a> Drop for U16Ref<'a> {
+    fn drop(&mut self) {
+        self.register.set_u16(self.cached_value);
     }
 }
 
@@ -729,7 +762,7 @@ mod cpu_tests {
         ]);
 
         cpu.step(&mut memory);
-        assert_eq!(cpu.hl().combined(), 0x0102);
+        assert_eq!(cpu.hl().u16(), 0x0102);
         assert_eq!(cpu.hl().lo(), 0x02);
         assert_eq!(cpu.hl().hi(), 0x01);
     }
@@ -749,6 +782,6 @@ mod cpu_tests {
 
         cpu.step(&mut memory);
 
-        assert_eq!(cpu.de().combined(), 0x0102);
+        assert_eq!(cpu.de().u16(), 0x0102);
     }
 }
