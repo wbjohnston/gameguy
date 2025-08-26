@@ -1,6 +1,7 @@
+use std::collections::{HashMap, HashSet};
 use std::io;
 
-use libgameguy::{Emulator, Opcode, ROM_00_SIZE};
+use libgameguy::{Emulator, Op, ROM_00_SIZE};
 
 use clap::Parser;
 use ratatui::crossterm::event;
@@ -15,6 +16,7 @@ use ratatui::{
 };
 
 struct App {
+    breakpoints: HashSet<u16>,
     command_buffer: String,
     command_history: Vec<String>,
     emulator: Emulator,
@@ -25,6 +27,7 @@ impl App {
         App {
             command_buffer: String::new(),
             command_history: Vec::new(),
+            breakpoints: HashSet::default(),
             emulator,
         }
     }
@@ -49,8 +52,13 @@ impl App {
             ])
             .split(chunks[1]);
 
-        let opcode_raw = self.emulator.memory().get_u8(self.emulator.cpu().pc());
-        let opcode = Opcode::from(*opcode_raw);
+        let opcode_raw = self
+            .emulator
+            .memory()
+            .get_u8((*self.emulator.cpu().pc()).into());
+        let opcode = Op::try_from(*opcode_raw)
+            .map(|x| format!("{}", x))
+            .unwrap_or("???".to_string());
         let registers_paragraph = Paragraph::new(
             [
                 format!("AF: {:04X}", self.emulator.cpu().af()),
@@ -60,19 +68,27 @@ impl App {
                 format!("SP: {:04X}", self.emulator.cpu().sp()),
                 format!("PC: {:04X}", self.emulator.cpu().pc()),
                 format!("OP: {:02X} {} ", opcode_raw, opcode),
+                format!(
+                    "Breakpoints: {}",
+                    self.breakpoints
+                        .iter()
+                        .map(|x| format!("{:04X}", x))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ),
             ]
             .join("\n"),
         )
         .block(Block::default().title("Registers").borders(Borders::ALL));
         f.render_widget(registers_paragraph, chunks[0]);
 
+        let pc_as_u16: u16 = (*self.emulator.cpu().pc()).into();
+
         // Memory view around PC
-        let area_around_pc = self.emulator.cpu().pc().saturating_sub(16)
-            ..self.emulator.cpu().pc().saturating_add(16);
+        let area_around_pc = pc_as_u16.saturating_sub(16)..pc_as_u16.saturating_add(16);
         let memory_view = area_around_pc
             .map(|addr| {
-                let pc = self.emulator.cpu().pc();
-                if addr == pc {
+                if addr == pc_as_u16 {
                     format!(
                         "{:04X}: {:02X} <-- PC",
                         addr,
@@ -88,20 +104,20 @@ impl App {
             .block(Block::default().title("Memory (PC)").borders(Borders::ALL));
         f.render_widget(memory_paragraph, memory_chunks[0]);
 
+        let sp_as_u16: u16 = (*self.emulator.cpu().sp()).into();
+
         // Stack view around SP
-        let area_around_sp = self.emulator.cpu().sp().saturating_sub(16)
-            ..self.emulator.cpu().sp().saturating_add(16);
+        let area_around_sp = sp_as_u16.saturating_sub(16)..sp_as_u16.saturating_add(16);
         // Enhanced stack view showing 16-bit values
         // let stack_view = [""];
         let stack_view = area_around_sp
             .step_by(2) // Step by 2 to show 16-bit values
             .map(|addr| {
-                let sp = self.emulator.cpu().sp();
                 let lo = self.emulator.memory().get_u8(addr);
                 let hi = self.emulator.memory().get_u8(addr.saturating_add(1));
                 let value = (*lo as u16) | ((*hi as u16) << 8);
 
-                if addr == sp {
+                if addr == sp_as_u16 {
                     format!("{:04X}: {:04X} <-- SP", addr, value)
                 } else {
                     format!("{:04X}: {:04X}", addr, value)
@@ -116,7 +132,7 @@ impl App {
         // Build command history display
         let mut command_display = vec![format!("(gbdb) {}", self.command_buffer)];
         for command in self.command_history.iter().rev() {
-            command_display.push(format!("{}", command));
+            command_display.push(format!("(gbdb) {}", command));
         }
 
         command_display.reverse();
@@ -169,7 +185,23 @@ impl App {
                             }
                             Some("c") => loop {
                                 self.emulator.step();
+                                if self
+                                    .breakpoints
+                                    .contains(&(*self.emulator.cpu().pc()).into())
+                                {
+                                    break;
+                                }
                             },
+                            Some("b") => {
+                                let addr_str = parts.next().unwrap_or("");
+                                let addr = if let Some(hex) = addr_str.strip_prefix("0x") {
+                                    u16::from_str_radix(hex, 16).unwrap_or(0)
+                                } else {
+                                    addr_str.parse::<u16>().unwrap_or(0)
+                                };
+
+                                self.breakpoints.insert(addr);
+                            }
                             Some("m") | Some("mem") => {
                                 let addr_str = parts.next().unwrap_or("");
                                 let addr = if let Some(hex) = addr_str.strip_prefix("0x") {
