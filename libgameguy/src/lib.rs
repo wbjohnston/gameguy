@@ -74,15 +74,22 @@ impl TryFrom<u8> for PrefixOp {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Op {
+    SubAR8(R8),
     CallU16,
+    Ret,
+    LdIU16A,
     LdIHliA,
+    IncR16(R16),
     PushR16(R16),
     LdR8R8(R8, R8),
+    CpAU8,
     LdIHlA,
     LdAIR16(R16),
     IncR8(R8),
     LDHldA,
     LdR8U8(R8),
+    JrI8,
+    LdhAU8,
     PopR16(R16),
     LdR16U16(R16),
     LdIHlR8(R8),
@@ -98,7 +105,8 @@ pub enum Op {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Condition {
-    Nz,
+    Nz, // Not Zero
+    Z,  // Zero
 }
 
 impl fmt::Display for Condition {
@@ -106,6 +114,7 @@ impl fmt::Display for Condition {
         use Condition::*;
         let st = match self {
             Nz => "NZ",
+            Z => "Z",
         };
 
         write!(f, "{}", st)
@@ -116,6 +125,13 @@ impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Op::*;
         let st = match self {
+            SubAR8(rhs) => format!("SUB A,{rhs}"),
+            LdhAU8 => format!("LD A,(FF00+u8)"),
+            LdIU16A => format!("LD (u16),A"),
+            JrI8 => format!("JR i8"),
+            CpAU8 => format!("CP A,u8"),
+            Ret => format!("RET"),
+            IncR16(r) => format!("INC {r}"),
             LdIHliA => format!("LD (HL+),A"),
             LdIHlA => format!("LD (HL),A"),
             DecR8(r) => format!("DEC {r}"),
@@ -149,7 +165,29 @@ impl TryFrom<u8> for Op {
         use R16::*;
         use R8::*;
         match value {
+            0x22 => Ok(LdIHlA),
+            0x04 => Ok(IncR8(B)),
+            0x1E => Ok(LdR8U8(E)),
+            0xF0 => Ok(LdhAU8),
+            0x23 => Ok(IncR16(HL)),
+            0x13 => Ok(IncR16(DE)),
+            0x7B => Ok(LdR8R8(A, E)),
+            0xFE => Ok(CpAU8),
+            0xC9 => Ok(Ret),
+            0x28 => Ok(JrCcI8(Z)),
+            0xEA => Ok(LdIU16A),
+            0x3D => Ok(DecR8(A)),
+            0x0D => Ok(DecR8(C)),
+            0x15 => Ok(DecR8(D)),
+            0x16 => Ok(LdR8U8(D)),
+            0x18 => Ok(JrI8),
             0x0C => Ok(IncR8(C)),
+            0x24 => Ok(IncR8(H)),
+            0x7c => Ok(LdR8R8(A, H)),
+            0x90 => Ok(SubAR8(B)),
+            0x1D => Ok(DecR8(E)),
+            0x67 => Ok(LdR8R8(H, A)),
+            0x57 => Ok(LdR8R8(D, A)),
             0x05 => Ok(DecR8(B)),
             0xC1 => Ok(PopR16(BC)),
             0x06 => Ok(LdR8U8(B)),
@@ -249,6 +287,63 @@ impl Cpu {
         use Op::*;
         use R8::*;
         match opcode {
+            JrI8 => {
+                let offset = memory[self.pc.into()] as i8;
+                self.pc += 1;
+
+                *self.pc.u16_mut() = self.pc.u16().wrapping_add_signed(offset as i16);
+            }
+            SubAR8(rhs) => {
+                let old = self.af.hi();
+                let rhs = self.r8(rhs);
+                let new = old.wrapping_sub(rhs);
+                *self.af.hi_mut() = new;
+
+                // Set flags for SUB A, r8
+                self.af.set_flag(Flag::Zero, new == 0);
+                self.af.set_flag(Flag::Subtraction, true);
+                self.af
+                    .set_flag(Flag::HalfCarry, (old & 0x0F) < (rhs & 0x0F));
+                self.af.set_flag(Flag::Carry, old < rhs);
+            }
+            LdhAU8 => {
+                let op = memory[self.pc.into()];
+                self.pc += 1;
+                let ptr = 0xFF00 + op as u16;
+
+                *self.af.hi_mut() = memory[ptr];
+            }
+            LdIU16A => {
+                let ptr = get_u16(memory, self.pc.into());
+                self.pc += 2;
+
+                memory[ptr] = self.af.hi();
+            }
+            CpAU8 => {
+                let op = memory[self.pc.into()];
+                self.pc += 1;
+
+                let value = self.af().hi().wrapping_sub(op);
+
+                self.af.set_flag(Flag::Zero, value == 0);
+                self.af.set_flag(Flag::Subtraction, true);
+                self.af
+                    .set_flag(Flag::HalfCarry, (self.af().hi() & 0x0F) < (op & 0x0F));
+                self.af.set_flag(Flag::Carry, self.af().hi() < op);
+            }
+            Ret => {
+                *self.pc.u16_mut() = get_u16(&mut memory, self.sp.into());
+                self.sp += 2;
+            }
+            IncR16(r) => {
+                let old = self.r16(r);
+                let new = old.wrapping_add(1);
+                *self.r16_mut(r) = new;
+
+                self.af.set_flag(Flag::Zero, new == 0);
+                self.af.set_flag(Flag::Subtraction, true);
+                self.af.set_flag(Flag::HalfCarry, (old & 0x0F) == 0);
+            }
             LdIHliA => {
                 let ptr = self.hl.u16();
                 *self.hl.u16_mut() += 1;
@@ -346,6 +441,7 @@ impl Cpu {
                 use Condition::*;
                 let should_jump = match cond {
                     Nz => self.af.get_flag(Flag::Zero),
+                    Z => !self.af.get_flag(Flag::Zero),
                 };
 
                 if should_jump {
